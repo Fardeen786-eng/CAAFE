@@ -2,6 +2,7 @@ import copy
 import pandas as pd
 import tabpfn
 import numpy as np
+from .metrics import evaluate_metric
 from .data import get_X_y
 from .preprocessing import make_datasets_numeric, make_dataset_numeric
 from sklearn.base import BaseEstimator
@@ -81,7 +82,7 @@ def evaluate_dataset(
     # If sklearn classifier
     elif isinstance(method, BaseEstimator):
         method.fit(X=x, y=y.long())
-        ys = method.predict_proba(test_x)
+        ys = method.predict(test_x)
     else:
         metric, ys, res = method(
             x,
@@ -92,13 +93,11 @@ def evaluate_dataset(
             metric_used,
         )
 
-    acc = tabpfn.scripts.tabular_metrics.accuracy_metric(test_y, ys)
-    roc = tabpfn.scripts.tabular_metrics.auc_metric(test_y, ys)
+    score = evaluate_metric(metric_used,test_y,ys)
 
     method_str = method if type(method) == str else "transformer"
     return {
-        "acc": float(acc.numpy()),
-        "roc": float(roc.numpy()),
+        "score": float(score),
         "prompt": prompt_id,
         "seed": seed,
         "name": name,

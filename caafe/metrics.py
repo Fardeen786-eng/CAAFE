@@ -6,38 +6,128 @@ from sklearn.metrics import (
     mean_squared_error,
     mean_absolute_error,
     r2_score,
+    f1_score,
 )
 import torch
 import numpy as np
 
+higher_is_better = {
+    "auc": True,
+    "accuracy": True,
+    "balanced_accuracy": True,
+    "average_precision": True,
+    "f1": True,
+    "r2": True,
+    "mse": False,
+    "mae": False,
+    "rmse": False,
+}
+
+def _to_torch(target, pred):
+    """Helper to convert inputs to torch tensors."""
+    if not torch.is_tensor(target):
+        target = torch.tensor(target)
+    if not torch.is_tensor(pred):
+        pred = torch.tensor(pred)
+    return target, pred
 
 def auc_metric(target, pred, multi_class="ovo", numpy=False):
     lib = np if numpy else torch
     try:
         if not numpy:
-            target = torch.tensor(target) if not torch.is_tensor(target) else target
-            pred = torch.tensor(pred) if not torch.is_tensor(pred) else pred
+            target, pred = _to_torch(target, pred)
         if len(lib.unique(target)) > 2:
-            if not numpy:
-                return torch.tensor(
-                    roc_auc_score(target, pred, multi_class=multi_class)
-                )
-            return roc_auc_score(target, pred, multi_class=multi_class)
+            score = roc_auc_score(target, pred, multi_class=multi_class)
         else:
-            if len(pred.shape) == 2:
+            if pred.ndim == 2:
                 pred = pred[:, 1]
-            if not numpy:
-                return torch.tensor(roc_auc_score(target, pred))
-            return roc_auc_score(target, pred)
-    except ValueError as e:
-        print(e)
-        return np.nan if numpy else torch.tensor(np.nan)
-
+            score = roc_auc_score(target, pred)
+        return lib.tensor(score) if not numpy else score
+    except ValueError:
+        return lib.tensor(np.nan) if not numpy else np.nan
 
 def accuracy_metric(target, pred):
-    target = torch.tensor(target) if not torch.is_tensor(target) else target
-    pred = torch.tensor(pred) if not torch.is_tensor(pred) else pred
+    target, pred = _to_torch(target, pred)
     if len(torch.unique(target)) > 2:
-        return torch.tensor(accuracy_score(target, torch.argmax(pred, -1)))
+        preds = torch.argmax(pred, dim=-1)
     else:
-        return torch.tensor(accuracy_score(target, pred[:, 1] > 0.5))
+        preds = (pred[:, 1] > 0.5).long()
+    return torch.tensor(accuracy_score(target, preds))
+
+def balanced_accuracy_metric(target, pred):
+    target, pred = _to_torch(target, pred)
+    if len(torch.unique(target)) > 2:
+        preds = torch.argmax(pred, dim=-1)
+    else:
+        preds = (pred[:, 1] > 0.5).long()
+    return torch.tensor(balanced_accuracy_score(target, preds))
+
+def average_precision_metric(target, pred):
+    target, pred = _to_torch(target, pred)
+    scores = pred[:, 1] if pred.ndim == 2 else pred
+    return torch.tensor(average_precision_score(target, scores))
+
+def mse_metric(target, pred):
+    target_np = np.asarray(target)
+    pred_np = np.asarray(pred)
+    return torch.tensor(mean_squared_error(target_np, pred_np))
+
+def mae_metric(target, pred):
+    target_np = np.asarray(target)
+    pred_np = np.asarray(pred)
+    return torch.tensor(mean_absolute_error(target_np, pred_np))
+
+def r2_metric(target, pred):
+    target_np = np.asarray(target)
+    pred_np = np.asarray(pred)
+    return torch.tensor(r2_score(target_np, pred_np))
+
+def f1_metric(target, pred, average="binary"):
+    """
+    F1 Score metric.
+    For binary classification: average="binary"
+    For multiclass: average can be "macro", "micro", or "weighted"
+    """
+    target, pred = _to_torch(target, pred)
+    if len(torch.unique(target)) > 2:
+        preds = torch.argmax(pred, dim=-1)
+        return torch.tensor(f1_score(target, preds, average=average))
+    else:
+        preds = (pred[:, 1] > 0.5).long()
+        return torch.tensor(f1_score(target, preds, average=average))
+
+def rmse_metric(target, pred):
+    target_np = np.asarray(target)
+    pred_np = np.asarray(pred)
+    mse = mean_squared_error(target_np, pred_np)
+    return torch.tensor(np.sqrt(mse))
+
+# map string names to functions
+METRIC_FUNCTIONS = {
+    "auc": auc_metric,
+    "accuracy": accuracy_metric,
+    "balanced_accuracy": balanced_accuracy_metric,
+    "average_precision": average_precision_metric,
+    "mse": mse_metric,
+    "mae": mae_metric,
+    "r2": r2_metric,
+    "f1": f1_metric,
+    "rmse": rmse_metric,
+}
+
+def evaluate_metric(metric_name: str, y_true, y_pred, **kwargs):
+    """
+    Compute the given metric.
+    Parameters
+    ----------
+    metric_name : str
+        One of the keys of METRIC_FUNCTIONS, e.g. "auc", "mse", "f1", etc.
+    y_true, y_pred
+        Ground-truth and predictions.
+    **kwargs
+        Additional arguments to pass to the metric (e.g., average="macro", numpy=True).
+    """
+    if metric_name not in METRIC_FUNCTIONS:
+        raise ValueError(f"Unsupported metric: {metric_name}")
+    fn = METRIC_FUNCTIONS[metric_name]
+    return fn(y_true, y_pred, **kwargs)

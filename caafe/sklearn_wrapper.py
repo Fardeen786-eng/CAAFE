@@ -37,6 +37,7 @@ class CAAFEClassifier(BaseEstimator, ClassifierMixin):
         llm_model: str = "gpt-3.5-turbo",
         n_splits: int = 10,
         n_repeats: int = 2,
+        display_method: str = "markdown"
     ) -> None:
         self.base_classifier = base_classifier
         if self.base_classifier is None:
@@ -56,8 +57,9 @@ class CAAFEClassifier(BaseEstimator, ClassifierMixin):
         self.optimization_metric = optimization_metric
         self.n_splits = n_splits
         self.n_repeats = n_repeats
+        self.display_method = display_method
 
-    def fit_pandas(self, df, dataset_description, target_column_name, **kwargs):
+    def fit_pandas(self, df, dataset_description, target_column_name, task, metric_to_use, **kwargs):
         """
         Fit the classifier to a pandas DataFrame.
 
@@ -74,11 +76,11 @@ class CAAFEClassifier(BaseEstimator, ClassifierMixin):
             df[target_column_name].values,
         )
         return self.fit(
-            X, y, dataset_description, feature_columns, target_column_name, **kwargs
+            X, y, dataset_description, feature_columns, target_column_name, task, metric_to_use, **kwargs
         )
 
     def fit(
-        self, X, y, dataset_description, feature_names, target_name, disable_caafe=False
+        self, X, y, dataset_description, feature_names, target_name, task="classification", metric_to_use="auc", disable_caafe=False, 
     ):
         """
         Fit the model to the training data.
@@ -135,11 +137,12 @@ class CAAFEClassifier(BaseEstimator, ClassifierMixin):
                 df_train,
                 model=self.llm_model,
                 iterative=self.iterations,
-                metric_used=auc_metric,
+                metric_used=metric_to_use,
                 iterative_method=self.base_classifier,
-                display_method="markdown",
+                display_method=self.display_method,
                 n_splits=self.n_splits,
                 n_repeats=self.n_repeats,
+                task=task,
             )
 
         df_train = run_llm_code(

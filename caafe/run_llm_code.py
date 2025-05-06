@@ -318,8 +318,13 @@ def check_ast(node: ast.AST) -> None:
         "dt",
         "cat",
         "sparse",
-        "plot"
+        "plot",
         # Add other DataFrame methods you want to allow here.
+        "notnull",
+        "isnull",
+        "notna",
+        "quantile",
+        "to_numeric",
     }
 
     if type(node) not in allowed_nodes:

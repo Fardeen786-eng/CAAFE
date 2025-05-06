@@ -1,19 +1,20 @@
 import copy
 import numpy as np
-
-import openai
+from typing import Optional
+from openai import OpenAI
 from sklearn.model_selection import RepeatedKFold
 from .caafe_evaluate import (
     evaluate_dataset,
 )
 from .run_llm_code import run_llm_code
+from .metrics import higher_is_better
 
 
 def get_prompt(
-    df, ds, iterative=1, data_description_unparsed=None, samples=None, **kwargs
+    df, ds, iterative=1, data_description_unparsed=None, samples=None, task="classification", metric="accuracy", **kwargs
 ):
     how_many = (
-        "up to 10 useful columns. Generate as many features as useful for downstream classifier, but as few as necessary to reach good performance."
+        "up to 10 useful columns. Generate as many features as useful for downstream downstream algorithm, but as few as necessary to reach good performance."
         if iterative == 1
         else "exactly one useful column"
     )
@@ -25,14 +26,14 @@ Description of the dataset in `df` (column dtypes might be inaccurate):
 Columns in `df` (true feature dtypes listed here, categoricals encoded as int):
 {samples}
     
-This code was written by an expert datascientist working to improve predictions. It is a snippet of code that adds new columns to the dataset.
+This code was written by an expert datascientist working to improve predictions on the {task} task. It is a snippet of code that adds new columns to the dataset.
 Number of samples (rows) in training dataset: {int(len(df))}
     
-This code generates additional columns that are useful for a downstream classification algorithm (such as XGBoost) predicting \"{ds[4][-1]}\".
+This code generates additional columns that are useful for a downstream algorithm (such as XGBoost) predicting \"{ds[4][-1]}\".
 Additional columns add new semantic information, that is they use real world knowledge on the dataset. They can e.g. be feature combinations, transformations, aggregations where the new column is a function of the existing columns.
 The scale of columns and offset does not matter. Make sure all used columns exist. Follow the above description of columns closely and consider the datatypes and meanings of classes.
-This code also drops columns, if these may be redundant and hurt the predictive performance of the downstream classifier (Feature selection). Dropping columns may help as the chance of overfitting is lower, especially if the dataset is small.
-The classifier will be trained on the dataset with the generated columns and evaluated on a holdout set. The evaluation metric is accuracy. The best performing code will be selected.
+This code also drops columns, if these may be redundant and hurt the predictive performance of the downstream algorithm (Feature selection). Dropping columns may help as the chance of overfitting is lower, especially if the dataset is small.
+The downstream algorithm will be trained on the dataset with the generated columns and evaluated on a holdout set. The evaluation metric is {metric}. The best performing code will be selected.
 Added columns can be used in other codeblocks, dropped columns are not available anymore.
 
 Code formatting for each added column:
@@ -58,7 +59,7 @@ Codeblock:
 # Each codeblock either generates {how_many} or drops bad columns (Feature selection).
 
 
-def build_prompt_from_df(ds, df, iterative=1):
+def build_prompt_from_df(ds, df, iterative=1, task="classification", metric="accuracy"):
     data_description_unparsed = ds[-1]
     feature_importance = {}  # xgb_eval(_obj)
 
@@ -88,6 +89,8 @@ def build_prompt_from_df(ds, df, iterative=1):
         data_description_unparsed=data_description_unparsed,
         iterative=iterative,
         samples=samples,
+        task=task,
+        metric=metric,
     )
 
     return prompt
@@ -96,14 +99,15 @@ def build_prompt_from_df(ds, df, iterative=1):
 def generate_features(
     ds,
     df,
-    model="gpt-3.5-turbo",
-    just_print_prompt=False,
-    iterative=1,
-    metric_used=None,
-    iterative_method="logistic",
-    display_method="markdown",
-    n_splits=10,
-    n_repeats=2,
+    model: str = "gpt-3.5-turbo",
+    just_print_prompt: bool = False,
+    iterative: int = 1,
+    metric_used: Optional[str] = None,
+    iterative_method: str = "logistic",
+    display_method: str = "markdown",
+    n_splits: int = 10,
+    n_repeats: int = 2,
+    task: str = "classification",
 ):
     def format_for_display(code):
         code = code.replace("```python", "").replace("```", "").replace("<end>", "")
@@ -121,7 +125,7 @@ def generate_features(
         iterative == 1 or metric_used is not None
     ), "metric_used must be set if iterative"
 
-    prompt = build_prompt_from_df(ds, df, iterative=iterative)
+    prompt = build_prompt_from_df(ds, df, iterative=iterative, task=task, metric=metric_used)
 
     if just_print_prompt:
         code, prompt = None, prompt
@@ -130,25 +134,25 @@ def generate_features(
     def generate_code(messages):
         if model == "skip":
             return ""
-        client = openai.OpenAI()
+        client = OpenAI()
         completion = client.chat.completions.create(
             model=model,
             messages=messages,
-            stop=["```end"],
             temperature=0.5,
-            max_completion_tokens=500
+            max_completion_tokens=8000
         )
-        completion = response.model_dump()
         
-        code = completion["choices"][0]["message"]["content"]
-        code = code.replace("```python", "").replace("```", "").replace("<end>", "")
+        code = completion.choices[0].message.content
+        code = code.replace("```python", "").replace("```", "").replace("<end>", "").replace("end","")
         return code
 
     def execute_and_evaluate_code_block(full_code, code):
-        old_accs, old_rocs, accs, rocs = [], [], [], []
+        old_scores, scores = [], []
 
         ss = RepeatedKFold(n_splits=n_splits, n_repeats=n_repeats, random_state=0)
+        fold = 0
         for (train_idx, valid_idx) in ss.split(df):
+            fold +=1
             df_train, df_valid = df.iloc[train_idx], df.iloc[valid_idx]
 
             # Remove target column from df_train
@@ -185,7 +189,7 @@ def generate_features(
             except Exception as e:
                 display_method(f"Error in code execution. {type(e)} {e}")
                 display_method(f"```python\n{format_for_display(code)}\n```\n")
-                return e, None, None, None, None
+                return e, None, None
 
             # Add target column back to df_train
             df_train[ds[4][-1]] = target_train
@@ -224,11 +228,10 @@ def generate_features(
                 finally:
                     sys.stdout = old_stdout
 
-            old_accs += [result_old["roc"]]
-            old_rocs += [result_old["acc"]]
-            accs += [result_extended["roc"]]
-            rocs += [result_extended["acc"]]
-        return None, rocs, accs, old_rocs, old_accs
+            display_method(f"> Fold-{fold}:- Old: {result_old['score']}, New: {result_extended['score']}")
+            old_scores += [result_old["score"]]
+            scores += [result_extended["score"]]
+        return None, scores, old_scores
 
     messages = [
         {
@@ -240,7 +243,7 @@ def generate_features(
             "content": prompt,
         },
     ]
-    display_method(f"*Dataset description:*\n {ds[-1]}")
+    display_method(f"# *Dataset description:*\n {ds[-1]}")
 
     n_iter = iterative
     full_code = ""
@@ -253,7 +256,7 @@ def generate_features(
             display_method("Error in LLM API." + str(e))
             continue
         i = i + 1
-        e, rocs, accs, old_rocs, old_accs = execute_and_evaluate_code_block(
+        e, scores, old_scores = execute_and_evaluate_code_block(
             full_code, code
         )
         if e is not None:
@@ -277,24 +280,30 @@ def generate_features(
         # )
         # """ROC Improvement by using each feature: {importances}"""
 
-        improvement_roc = np.nanmean(rocs) - np.nanmean(old_rocs)
-        improvement_acc = np.nanmean(accs) - np.nanmean(old_accs)
+        old_mean = np.nanmean(old_scores)
+        new_mean = np.nanmean(scores)
+        sign = 1 if higher_is_better.get(metric_used, True) else -1
+        improvement = sign * (new_mean - old_mean)
 
-        add_feature = True
-        add_feature_sentence = "The code was executed and changes to ´df´ were kept."
-        if improvement_roc + improvement_acc <= 0:
-            add_feature = False
-            add_feature_sentence = f"The last code changes to ´df´ were discarded. (Improvement: {improvement_roc + improvement_acc})"
+        add_feature = improvement > 0
+        if add_feature:
+            sentence = "The code was executed and changes to ´df´ were kept."
+        else:
+            sentence = (
+                f"The last code changes to ´df´ were discarded. "
+                f"(Improvement: {improvement})"
+            )
 
         display_method(
             "\n"
             + f"*Iteration {i}*\n"
-            + f"```python\n{format_for_display(code)}\n```\n"
-            + f"Performance before adding features ROC {np.nanmean(old_rocs):.3f}, ACC {np.nanmean(old_accs):.3f}.\n"
-            + f"Performance after adding features ROC {np.nanmean(rocs):.3f}, ACC {np.nanmean(accs):.3f}.\n"
-            + f"Improvement ROC {improvement_roc:.3f}, ACC {improvement_acc:.3f}.\n"
-            + f"{add_feature_sentence}\n"
-            + f"\n"
+            + f"```python\n{format_for_display(code)}\n```"
+        )
+        display_method(f"""
+- Performance before adding features {metric_used} : {old_mean}
+- Performance after adding features {metric_used}  : {new_mean}
+- Improvement in {metric_used}: {improvement}
+- {sentence}"""
         )
 
         if len(code) > 10:
@@ -302,7 +311,7 @@ def generate_features(
                 {"role": "assistant", "content": code},
                 {
                     "role": "user",
-                    "content": f"""Performance after adding feature ROC {np.nanmean(rocs):.3f}, ACC {np.nanmean(accs):.3f}. {add_feature_sentence}
+                    "content": f"""Performance after adding feature {metric_used} {new_mean}. {sentence}\n
 Next codeblock:
 """,
                 },
