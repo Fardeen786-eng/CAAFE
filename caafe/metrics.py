@@ -52,8 +52,12 @@ def accuracy_metric(target, pred):
     if len(torch.unique(target)) > 2:
         preds = torch.argmax(pred, dim=-1)
     else:
-        preds = (pred[:, 1] > 0.5).long()
-    return torch.tensor(accuracy_score(target, preds))
+        if pred.ndim == 2:
+            preds = (pred[:, 1] > 0.5).long()
+        else:
+            # Assume pred is already class labels or probabilities
+            preds = (pred > 0.5).long() if pred.dtype.is_floating_point else pred.long()    
+    return torch.tensor(accuracy_score(target.cpu(), preds.cpu()))
 
 def balanced_accuracy_metric(target, pred):
     target, pred = _to_torch(target, pred)
@@ -93,9 +97,11 @@ def f1_metric(target, pred, average="binary"):
     if len(torch.unique(target)) > 2:
         preds = torch.argmax(pred, dim=-1)
         return torch.tensor(f1_score(target, preds, average=average))
-    else:
+    if pred.dim() == 2 and pred.size(1) == 2:
         preds = (pred[:, 1] > 0.5).long()
-        return torch.tensor(f1_score(target, preds, average=average))
+    else:
+        preds = (pred > 0.5).long() if pred.dtype == torch.float else pred.long()
+    return torch.tensor(f1_score(target, preds, average=average))
 
 def rmse_metric(target, pred):
     target_np = np.asarray(target)
