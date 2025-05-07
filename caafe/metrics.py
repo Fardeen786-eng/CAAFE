@@ -21,6 +21,7 @@ higher_is_better = {
     "mse": False,
     "mae": False,
     "rmse": False,
+    "rae": False,
 }
 
 def _to_torch(target, pred):
@@ -102,6 +103,15 @@ def rmse_metric(target, pred):
     mse = mean_squared_error(target_np, pred_np)
     return torch.tensor(np.sqrt(mse))
 
+def rae_metric(target, pred):
+    target_np = np.asarray(target)
+    pred_np = np.asarray(pred)
+    numerator = np.sum(np.abs(target_np - pred_np))
+    denominator = np.sum(np.abs(target_np - np.mean(target_np)))
+    if denominator == 0:
+        return torch.tensor(np.nan)  # Avoid division by zero
+    return torch.tensor(numerator / denominator)
+
 # map string names to functions
 METRIC_FUNCTIONS = {
     "auc": auc_metric,
@@ -113,6 +123,7 @@ METRIC_FUNCTIONS = {
     "r2": r2_metric,
     "f1": f1_metric,
     "rmse": rmse_metric,
+    "rae": rae_metric,
 }
 
 def evaluate_metric(metric_name: str, y_true, y_pred, **kwargs):
