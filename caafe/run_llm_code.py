@@ -327,6 +327,9 @@ def check_ast(node: ast.AST) -> None:
         "to_numeric",
         "int8",
         "strip",
+        "sin",
+        "cos",
+        "pi",
     }
 
     if type(node) not in allowed_nodes:
