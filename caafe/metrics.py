@@ -87,7 +87,7 @@ def r2_metric(target, pred):
     pred_np = np.asarray(pred)
     return torch.tensor(r2_score(target_np, pred_np))
 
-def f1_metric(target, pred, average="binary"):
+def f1_metric(target, pred, average="weighted"):
     """
     F1 Score metric.
     For binary classification: average="binary"
@@ -96,12 +96,12 @@ def f1_metric(target, pred, average="binary"):
     target, pred = _to_torch(target, pred)
     if len(torch.unique(target)) > 2:
         preds = torch.argmax(pred, dim=-1)
-        return torch.tensor(f1_score(target, preds, average=average))
+        return torch.tensor(f1_score(target.cpu().numpy().ravel(), preds.cpu().numpy().ravel(), average=average))
     if pred.dim() == 2 and pred.size(1) == 2:
         preds = (pred[:, 1] > 0.5).long()
     else:
         preds = (pred > 0.5).long() if pred.dtype == torch.float else pred.long()
-    return torch.tensor(f1_score(target, preds, average=average))
+    return torch.tensor(f1_score(target.cpu().numpy().ravel(), preds.cpu().numpy().ravel(), average=average))
 
 def rmse_metric(target, pred):
     target_np = np.asarray(target)
