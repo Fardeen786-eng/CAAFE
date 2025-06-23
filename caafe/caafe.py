@@ -11,7 +11,7 @@ from .metrics import higher_is_better
 
 
 def get_prompt(
-    df, ds, iterative=1, data_description_unparsed=None, samples=None, task="classification", metric="accuracy", **kwargs
+    df, ds, original_features, iterative=1, data_description_unparsed=None, samples=None, task="classification", metric="accuracy", **kwargs
 ):
     how_many = (
         "up to 10 useful columns. Generate as many features as useful for downstream downstream algorithm, but as few as necessary to reach good performance."
@@ -39,6 +39,8 @@ Added columns can be used in other codeblocks, dropped columns are not available
 Code formatting for each added column:
 ```python
 # (Feature name and description)
+# Feature Order: (1, 2, 3, ...), The number of original (raw) features involved in the construction of a derived feature. {original_features}
+# Transformation Order: (1, 2, 3, ...), The number of sequential transformation steps required to compute the feature.
 # Usefulness: (Description why this adds useful real world knowledge to classify \"{ds[4][-1]}\" according to dataset description and attributes.)
 # Input samples: (Three samples of the columns used in the following code, e.g. '{df.columns[0]}': {list(df.iloc[:3, 0].values)}, '{df.columns[1]}': {list(df.iloc[:3, 1].values)}, ...)
 (Some pandas code using {df.columns[0]}', '{df.columns[1]}', ... to add a new column for each row in df)
@@ -86,13 +88,13 @@ def build_prompt_from_df(ds, df, iterative=1, task="classification", metric="acc
     prompt = get_prompt(
         df,
         ds,
+        original_features=ds[4][:-1],  # all but last element
         data_description_unparsed=data_description_unparsed,
         iterative=iterative,
         samples=samples,
         task=task,
         metric=metric,
     )
-
     return prompt
 
 
