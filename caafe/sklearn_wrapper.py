@@ -59,7 +59,7 @@ class CAAFEClassifier(BaseEstimator, ClassifierMixin):
         self.n_repeats = n_repeats
         self.display_method = display_method
 
-    def fit_pandas(self, df, dataset_description, target_column_name, task, metric_to_use, **kwargs):
+    def fit_pandas(self, df, dataset_description, target_column_name, task, metric_to_use, more_features=True,**kwargs):
         """
         Fit the classifier to a pandas DataFrame.
 
@@ -76,11 +76,11 @@ class CAAFEClassifier(BaseEstimator, ClassifierMixin):
             df[target_column_name].values,
         )
         return self.fit(
-            X, y, dataset_description, feature_columns, target_column_name, task, metric_to_use, **kwargs
+            X, y, dataset_description, feature_columns, target_column_name, task, metric_to_use, more_features **kwargs
         )
 
     def fit(
-        self, X, y, dataset_description, feature_names, target_name, task="classification", metric_to_use="auc", disable_caafe=False, 
+        self, X, y, dataset_description, feature_names, target_name, task="classification", metric_to_use="auc", disable_caafe=False, more_features=True,
     ):
         """
         Fit the model to the training data.
@@ -143,6 +143,7 @@ class CAAFEClassifier(BaseEstimator, ClassifierMixin):
                 n_splits=self.n_splits,
                 n_repeats=self.n_repeats,
                 task=task,
+                more_features=more_features,
             )
 
         df_train = run_llm_code(
