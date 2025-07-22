@@ -76,7 +76,7 @@ class CAAFEClassifier(BaseEstimator, ClassifierMixin):
             df[target_column_name].values,
         )
         return self.fit(
-            X, y, dataset_description, feature_columns, target_column_name, task, metric_to_use, more_features, **kwargs
+            X, y, dataset_description, feature_columns, target_column_name, task, metric_to_use, False, more_features, **kwargs
         )
 
     def fit(
