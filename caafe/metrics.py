@@ -22,6 +22,7 @@ higher_is_better = {
     "mae": False,
     "rmse": False,
     "rae": False,
+    "1-rae": True,  # 1 - rae is higher is better
 }
 
 def _to_torch(target, pred):
@@ -118,6 +119,18 @@ def rae_metric(target, pred):
         return torch.tensor(np.nan)  # Avoid division by zero
     return torch.tensor(numerator / denominator)
 
+def rae_metric_1(target, pred):
+    """
+    1 - RAE, where higher is better.
+    """
+    target_np = np.asarray(target)
+    pred_np = np.asarray(pred)
+    numerator = np.sum(np.abs(target_np - pred_np))
+    denominator = np.sum(np.abs(target_np - np.mean(target_np)))
+    if denominator == 0:
+        return torch.tensor(np.nan)  # Avoid division by zero
+    return torch.tensor(1 - (numerator / denominator))
+
 # map string names to functions
 METRIC_FUNCTIONS = {
     "auc": auc_metric,
@@ -130,6 +143,7 @@ METRIC_FUNCTIONS = {
     "f1": f1_metric,
     "rmse": rmse_metric,
     "rae": rae_metric,
+    "1-rae": rae_metric_1,
 }
 
 def evaluate_metric(metric_name: str, y_true, y_pred, **kwargs):

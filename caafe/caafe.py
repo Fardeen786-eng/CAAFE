@@ -11,11 +11,11 @@ from .metrics import higher_is_better
 
 
 def get_prompt(
-    df, ds, original_features, iterative=1, data_description_unparsed=None, samples=None, task="classification", metric="accuracy", **kwargs
+    df, ds, original_features, iterative=1, data_description_unparsed=None, more_features=True, samples=None, task="classification", metric="accuracy", **kwargs
 ):
     how_many = (
-        "up to 10 useful columns. Generate as many features as useful for downstream downstream algorithm, but as few as necessary to reach good performance."
-        if iterative == 1
+        "up to 5 useful columns. Generate as many features as useful for downstream downstream algorithm, but as few as necessary to reach good performance."
+        if more_features == True
         else "exactly one useful column"
     )
     return f"""
@@ -61,7 +61,7 @@ Codeblock:
 # Each codeblock either generates {how_many} or drops bad columns (Feature selection).
 
 
-def build_prompt_from_df(ds, df, iterative=1, task="classification", metric="accuracy"):
+def build_prompt_from_df(ds, df, iterative=1, task="classification", metric="accuracy",more_features=True):
     data_description_unparsed = ds[-1]
     feature_importance = {}  # xgb_eval(_obj)
 
@@ -90,6 +90,7 @@ def build_prompt_from_df(ds, df, iterative=1, task="classification", metric="acc
         ds,
         original_features=ds[4][:-1],  # all but last element
         data_description_unparsed=data_description_unparsed,
+        more_features=more_features,
         iterative=iterative,
         samples=samples,
         task=task,
@@ -110,6 +111,7 @@ def generate_features(
     n_splits: int = 10,
     n_repeats: int = 2,
     task: str = "classification",
+    more_features: bool = True,
 ):
     def format_for_display(code):
         code = code.replace("```python", "").replace("```", "").replace("<end>", "")
@@ -127,7 +129,7 @@ def generate_features(
         iterative == 1 or metric_used is not None
     ), "metric_used must be set if iterative"
 
-    prompt = build_prompt_from_df(ds, df, iterative=iterative, task=task, metric=metric_used)
+    prompt = build_prompt_from_df(ds, df, iterative=iterative, task=task, metric=metric_used, more_features=more_features)
 
     if just_print_prompt:
         code, prompt = None, prompt
